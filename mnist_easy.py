@@ -7,6 +7,8 @@ import tensorflow as tf
 from tf_extra import tf_placeholders, tf_Variables, float_default_prec
 from tensorflow.examples.tutorials.mnist import input_data
 
+LOG_DIR = "MNIST_Logit_Log/"
+
 def main( ):
     """ The main function for testing """
 
@@ -47,19 +49,19 @@ def main( ):
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer()) # init Vars
-        writer = tf.summary.FileWriter("LogDir") # summary writer
+        writer = tf.summary.FileWriter(LOG_DIR) # summary writer
         writer.add_graph(sess.graph)
 
         for i in range(500):
             batchX, batchY = mnist.train.next_batch(250)
             _, sum = sess.run([train_step, summary], feed_dict={x:batchX, y_:batchY})
             if (i+1) % 100 == 0:
-                saver.save(sess, './mnist-logit/model', global_step=100, write_meta_graph=True)
+                saver.save(sess, './MNIST_Logit_Log/model', global_step=100, write_meta_graph=True)
             writer.add_summary(sum, i)
 
 
 if __name__ == '__main__':
     import os, shutil
-    if os.path.exists('LogDir'):
-        shutil.rmtree('LogDir')
+    if os.path.exists(LOG_DIR):
+        shutil.rmtree(LOG_DIR)
     main( )
