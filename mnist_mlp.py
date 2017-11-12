@@ -8,7 +8,7 @@ class MLP(object):
     # global instance counter
     __MLPs = 0
 
-    def __init__(self, layer_dims: '3-tuple', reuse=True):
+    def __init__(self, layer_dims: '3-tuple', dtype=tf.float64, reuse=True):
         'the class initializer'
 
         # handle global and local counting
@@ -25,11 +25,11 @@ class MLP(object):
 
         # create weights
         if reuse:
-            self.__init_weights__(re_use=tf.AUTO_REUSE)
+            self.__init_weights__(dtype=dtype, re_use=tf.AUTO_REUSE)
         else:
-            self.__init_weights__()
+            self.__init_weights__(dtype=dtype)
 
-    def __init_weights__(self, re_use=None):
+    def __init_weights__(self, dtype=tf.float64, re_use=None):
         'private function for weight initialization'
 
         var_scope = 'MLP' + str(self.id) + '_vars'
@@ -38,14 +38,14 @@ class MLP(object):
             
             # first layer parameters
             self.W1 = tf.get_variable(var_scope+'_W1', shape=(self.layer_dims[0], self.layer_dims[1]), 
-                dtype=tf.float64, initializer=tf.initializers.random_normal)
-            self.b1 = tf.get_variable(var_scope+'_b1', shape=(self.layer_dims[1],), dtype=tf.float64,
+                dtype=dtype, initializer=tf.initializers.random_normal)
+            self.b1 = tf.get_variable(var_scope+'_b1', shape=(self.layer_dims[1],), dtype=dtype,
                 initializer=tf.initializers.zeros)
 
             # second layer parameters
             self.W2 = tf.get_variable(var_scope+'_W2', shape=(self.layer_dims[1], self.layer_dims[2]),
-                dtype=tf.float64, initializer=tf.initializers.random_normal)
-            self.b2 = tf.get_variable(var_scope+'_b2', shape=(self.layer_dims[2],), dtype=tf.float64,
+                dtype=dtype, initializer=tf.initializers.random_normal)
+            self.b2 = tf.get_variable(var_scope+'_b2', shape=(self.layer_dims[2],), dtype=dtype,
                 initializer=tf.initializers.zeros)
 
     def W_filter_summary(self):
@@ -159,4 +159,4 @@ if __name__ == '__main__':
 if __name__ == os.path.splitext(os.path.basename(__file__))[0]:
     # for importing from this file
     tf.logging.set_verbosity(tf.logging.DEBUG)
-    tf.logging.info('Importing from {0}'.format(__file__))
+    tf.logging.info('Importing from {0}'.format(os.path.basename(__file__)))
