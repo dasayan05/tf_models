@@ -20,12 +20,15 @@ def main( ):
     W_init = tf.zeros((784, 10), dtype=float_default_prec)
     b_init = tf.zeros((10,), dtype=float_default_prec)
     W, b = tf_Variables(['W', 'b'], [W_init, b_init])
+    W_reshaped = tf.reshape(tf.transpose(W), [-1, 28, 28, 1])
+    W_summary = tf.summary.image('W_filters', W_reshaped, max_outputs=10)
 
     # the model
     y = tf.matmul(x, W) + b
 
     # loss
     cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=y, labels=y_))
+    tf.summary.scalar('xent', cross_entropy)
 
     # training
     trainer = tf.train.GradientDescentOptimizer(0.2)
@@ -34,17 +37,29 @@ def main( ):
     # testing
     correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float64))
+    tf.summary.scalar('accuracy', accuracy)
+    
+    # summary all
+    summary = tf.summary.merge_all()
+
+    # saver
+    saver = tf.train.Saver()
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer()) # init Vars
+        writer = tf.summary.FileWriter("LogDir") # summary writer
+        writer.add_graph(sess.graph)
 
-        for _ in range(1000):
-            batchX, batchY = mnist.train.next_batch(100)
-            sess.run(train_step, feed_dict={x:batchX, y_:batchY})
-
-            # test on test dataset
-            print(sess.run(accuracy, feed_dict={x: mnist.test.images, y_: mnist.test.labels}))
+        for i in range(500):
+            batchX, batchY = mnist.train.next_batch(250)
+            _, sum = sess.run([train_step, summary], feed_dict={x:batchX, y_:batchY})
+            if (i+1) % 100 == 0:
+                saver.save(sess, './mnist-logit/model', global_step=100, write_meta_graph=True)
+            writer.add_summary(sum, i)
 
 
 if __name__ == '__main__':
+    import os, shutil
+    if os.path.exists('LogDir'):
+        shutil.rmtree('LogDir')
     main( )
