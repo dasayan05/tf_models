@@ -1,1 +1,6 @@
 MNIST_data/
+*Log/
+examples/
+__*/
+test.py
+
