@@ -3,4 +3,4 @@ MNIST_data/
 examples/
 __*/
 test.py
-
+*.data
