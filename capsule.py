@@ -37,17 +37,7 @@ def main( args=None ):
         conv1_act = tf.nn.relu(conv1_pre, name='conv1_act')
 
     with tf.variable_scope(params):
-        # TODO: this params could be more vectorized
-        # W_convcaps, b_convcaps = [], []
         with tf.variable_scope('Conv2Caps'):
-            # for I in range(convcaps_fea_maps):
-            #     w_var_name = 'Conv2Caps' + '_W'
-            #     b_var_name = 'Conv2Caps' + '_b'
-            #     W_convcaps.append( tf.get_variable(w_var_name+str(I+1), dtype=tf.float32,
-            #         shape=(*convcaps_kernel_size, conv1_fea_maps, convcaps_capsule_dim),
-            #         initializer=tf.initializers.truncated_normal) )
-            #     b_convcaps.append( tf.get_variable(b_var_name+str(I+1), dtype=tf.float32,
-            #         shape=(convcaps_capsule_dim,), initializer=tf.initializers.zeros) )
             w_var_name = 'Conv2Caps' + '_W'
             b_var_name = 'Conv2Caps' + '_b'
 
@@ -59,15 +49,6 @@ def main( args=None ):
                 initializer=tf.initializers.zeros)
 
     with tf.name_scope('PrimCaps'):
-        # TODO: this list could be more easily computed by proper vectorization
-        # (hint: tf slices)
-
-        # primecaps_act = [
-        #     tf.nn.relu(tf.nn.conv2d(conv1_act, W_convcaps[...,I:I+convcaps_capsule_dim],
-        #         convcaps_stride, 'VALID') + b_convcaps[I:I+convcaps_capsule_dim])
-        #     for I in range(convcaps_fea_maps)
-        # ]
-
         primecaps_act = tf.nn.relu(
                 tf.nn.conv2d(conv1_act, W_convcaps, convcaps_stride, 'VALID') + b_convcaps
             )
@@ -85,27 +66,14 @@ def main( args=None ):
         primecaps_cap_f = tf.reshape(primecaps_cap_f, 
             shape=(-1, 6*6*convcaps_fea_maps, 1, convcaps_capsule_dim))
 
-# ALL OKAY !!!!!!!!!!
-
     with tf.variable_scope(params):
         with tf.variable_scope('Caps2Caps'):
-            # Wj = []
-            # for c in range(n_class):
-            #     w_temp = tf.get_variable('W'+str(c), 
-            #         shape=(1, 6*6*convcaps_fea_maps, convcaps_capsule_dim, out_capsule_dim),
-            #         dtype=tf.float32, initializer=tf.initializers.random_normal)
-            #     Wj.append( tf.tile(w_temp, [bsize, 1, 1, 1]) )
             W = tf.get_variable('W', dtype=tf.float32, initializer=tf.initializers.random_normal,
                 shape=(1, 6*6*convcaps_fea_maps, convcaps_capsule_dim, out_capsule_dim, n_class))
 
             # bij: the logits for c_ij
             bij = tf.get_variable('bij', dtype=tf.float32, initializer=tf.initializers.zeros,
                 shape=(6*6*convcaps_fea_maps, n_class))
-
-    # with tf.name_scope(phs):
-    #     # bij: the logits for c_ij
-    #     bij = tf.placeholder_with_default(zeros((6*6*convcaps_fea_maps, n_class), dtype=float32),
-    #         shape=(6*6*convcaps_fea_maps, n_class), name='bij')
 
     with tf.name_scope('Caps2Digs'):
         # coupling coeff c_ij
@@ -120,26 +88,12 @@ def main( args=None ):
             # full 'prediction vector'; need it in 'routing'
             u = tf.squeeze(tf.stack(uj, axis=4), axis=None, name='u')
 
-# ALL OKAY !!!!!!!!!!!!!!!!
-
         with tf.name_scope('cap_pre_act'):
-            # sj = [
-            #     tf.squeeze(tf.reduce_sum(
-            #         u * tf.reshape(cij, shape=(1,6*6*convcaps_fea_maps,1,n_class)), axis=1),
-            #     axis=None, name='s_'+str(u_i))
-            #     for u_i, u in enumerate(uj)
-            # ]
             s = tf.squeeze(tf.reduce_sum(
                     u * tf.reshape(cij, shape=(1,6*6*convcaps_fea_maps,1,n_class)), axis=1),
                 axis=None, name='s')
 
         with tf.name_scope('cap_act'):
-            # the squash-ing part
-            # with tf.name_scope('squash'):
-            #     vj = []
-            #     for c in range(n_class):
-            #         squash_factor = tf.norm(sj[c], axis=1, keep_dims=True) / (1 + tf.norm(sj[c], axis=1, keep_dims=True) ** 2)
-            #         vj.append( sj[c] * squash_factor )
             squash_factor = tf.norm(s, axis=1, keep_dims=True) / (1 + tf.norm(s, axis=1, keep_dims=True) ** 2)
             v = s * squash_factor # auto broad-casting
 
