@@ -1,18 +1,21 @@
 import tensorflow as tf
-from get_data import get_mini_mnist
+from mnist_mlp import MLP
+from tensorflow.examples.tutorials.mnist import input_data
 import os, shutil
 from numpy import zeros, float32, linalg
 from numpy.random import randn
 
-bsize = 5
+bsize = 20 # BATCH SIZE. 200 maybe
+epochs = 100
 MPlus = 0.9
 MMinus = 0.1
 lam = 0.5
 eps = 1e-9
+reco_loss_importance = 1e-6
+routing_iter = 2
 
 def main( args=None ):
-    X, Y = get_mini_mnist(bsize=bsize,as_image=True)
-    X = X.reshape((-1, 28, 28, 1))
+    mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
 
     conv1_kernel_size = (9,9)
     conv1_fea_maps = 256
@@ -83,15 +86,7 @@ def main( args=None ):
             W = tf.get_variable('W', dtype=tf.float32, initializer=tf.initializers.random_normal,
                 shape=(1, 6*6*convcaps_fea_maps, convcaps_capsule_dim, out_capsule_dim, n_class))
 
-            # bij should be excluded from the default AdamOptimizer
-            # because it will be trained by 'routing'
-            bij = tf.get_variable('bij', dtype=tf.float32, initializer=tf.initializers.zeros,
-                shape=(6*6*convcaps_fea_maps, n_class), trainable=False)
-
     with tf.name_scope('Caps2Digs'):
-        # coupling coeff c_ij
-        cij = tf.nn.softmax(bij, dim=1) + 1e-10
-
         uj = []
         with tf.name_scope('pred_vec'):
             for c in range(n_class):
@@ -101,29 +96,61 @@ def main( args=None ):
             # full 'prediction vector'; need it in 'routing'; (B x 1152 x 16 x 10)
             u = tf.squeeze(tf.stack(uj, axis=4), axis=None, name='u')
 
-        with tf.name_scope('cap_pre_act'):
-            s = tf.squeeze(tf.reduce_sum(
-                    u * tf.reshape(cij, shape=(1,6*6*convcaps_fea_maps,1,n_class)), axis=1),
-                axis=None, name='s')
+        bij = tf.constant(zeros((bsize, 6*6*convcaps_fea_maps, n_class), dtype=float32),
+            dtype=tf.float32, name='bij')
 
-        with tf.name_scope('cap_act'):
-            vec_squared_norm = tf.reduce_sum(tf.square(s), 1, keep_dims=True)
-            scalar_factor = vec_squared_norm / (1 + vec_squared_norm) / tf.sqrt(vec_squared_norm + eps)
-            v = scalar_factor * s # (B x 16 x 10)
+        for route_iter in range(routing_iter):
+            with tf.name_scope('route_' + str(route_iter)):
+                cij = tf.nn.softmax(bij, dim=2)
 
-        # ROUTING OPS will go here
+                s = tf.squeeze(tf.reduce_sum(
+                        u * tf.reshape(cij, shape=(bsize,6*6*convcaps_fea_maps,1,n_class)), axis=1),
+                    axis=None, name='s')
+
+                vec_squared_norm = tf.reduce_sum(tf.square(s), axis=1, keep_dims=True)
+                scalar_factor = vec_squared_norm / (1 + vec_squared_norm) / tf.sqrt(vec_squared_norm + eps)
+                v = scalar_factor * s # (B x 16 x 10)
+
+                if route_iter < routing_iter - 1: # bij comp not required at the end
+                    # Here comes 'routing'
+                    v_r = tf.reshape(v, shape=(-1, 1, out_capsule_dim, n_class)) # (B x 1 x 16 x 10)
+                    v_r = tf.tile(v_r, [1, 6*6*convcaps_fea_maps, 1, 1], name='v_for_route')
+
+                    uv_dot = tf.reduce_sum(u*v_r, axis=2, name='uv')
+
+                    bij += uv_dot
 
     with tf.name_scope('loss'):
+
+        with tf.name_scope('recon_loss'):
+            with tf.variable_scope(params):
+                mlp = MLP([out_capsule_dim, 256, 28*28], dtype=tf.float32)
+
+            v_masked = tf.multiply(v, tf.reshape(y, shape=(-1,1,n_class)))
+            v_masked = tf.reduce_sum(v_masked, axis=2, name='v_mask') # (B x 16)
+
+            v_reco = mlp.make_model(v_masked) # (B x 784)
+
+            reco_loss = tf.reduce_mean(tf.square(v_reco - tf.reshape(x, shape=(-1, 784))), name='reco_loss')
+
         v_len = tf.sqrt(tf.reduce_sum(tf.square(v), axis=1) + eps)
 
-        # loss as proposed in the paper
-        l_klass = y * (tf.maximum(zeros((1,1),dtype=float32), MPlus-v_len)**2) + \
-            lam * (1-y) * (tf.maximum(zeros((1,1),dtype=float32), v_len-MMinus)**2)
+        with tf.name_scope('classif_loss'):
+            # loss as proposed in the paper
+            l_klass = y * (tf.maximum(zeros((1,1),dtype=float32), MPlus-v_len)**2) + \
+                lam * (1-y) * (tf.maximum(zeros((1,1),dtype=float32), v_len-MMinus)**2)
 
-        loss = tf.reduce_mean(l_klass, name='loss')
+            class_loss = tf.reduce_mean(l_klass, name='loss')
+
+        with tf.name_scope('full_loss'):
+            loss = class_loss + reco_loss * reco_loss_importance
+
+    with tf.name_scope('testing'):
+        correct_prediction = tf.equal(tf.argmax(v_len, 1), tf.argmax(y, 1))
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
     with tf.name_scope('optim'):
-        optimizer = tf.train.AdamOptimizer(1e-4)
+        optimizer = tf.train.AdamOptimizer(1e-3)
         train_step = optimizer.minimize(loss)
 
     with tf.Session() as sess:
@@ -131,9 +158,22 @@ def main( args=None ):
         writer = tf.summary.FileWriter("CAPSLog")
         writer.add_graph(graph=sess.graph)
 
-        for _ in range(10):
-            _, l = sess.run([train_step, loss], feed_dict={x: X, y: Y})
-            print('loss: {0}'.format(l))
+        for E in range(epochs):
+            for I in range(int(55000 / bsize)):
+                X, Y = mnist.train.next_batch(bsize)
+                X = X.reshape((bsize, 28, 28, 1))
+
+                _, cl, rl = sess.run([train_step, class_loss, reco_loss], feed_dict={x: X, y: Y})
+                if I % 5 == 0:
+                    print('loss: {2} = {0} + {1}'.format(cl, rl*reco_loss_importance, cl+rl*reco_loss_importance))
+
+            # test it once
+            for I in range(int(5000/bsize)):
+                X, Y = mnist.validation.next_batch(bsize)
+                X = X.reshape((-1,28,28,1))
+                acc_ = sess.run(accuracy, feed_dict={x: X, y: Y})
+                print('TEST :: Epoch/Batch:{0}/{1}, accuracy:{2}'.format(E, acc_))
+
 
 if __name__ == '__main__':
     if os.path.exists("CAPSLog"):
