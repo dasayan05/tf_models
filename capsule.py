@@ -10,8 +10,8 @@ epochs = 100
 MPlus = 0.9
 MMinus = 0.1
 lam = 0.5
-eps = 1e-9
-reco_loss_importance = 1e-6
+eps = 1e-15
+reco_loss_importance = 5e-4
 routing_iter = 2
 
 def main( args=None ):
@@ -36,7 +36,7 @@ def main( args=None ):
     with tf.variable_scope('params') as params:
         with tf.variable_scope('Inp2Conv'):
             W_conv1 = tf.get_variable('W_conv1', shape=(*conv1_kernel_size, 1, conv1_fea_maps),
-                dtype=tf.float32, initializer=tf.initializers.random_uniform)
+                dtype=tf.float32, initializer=tf.initializers.random_normal)
             b_conv1 = tf.get_variable('b_conv1', shape=(conv1_fea_maps,), dtype=tf.float32,
                 initializer=tf.initializers.random_uniform)
 
@@ -124,12 +124,16 @@ def main( args=None ):
 
         with tf.name_scope('recon_loss'):
             with tf.variable_scope(params):
-                mlp = MLP([out_capsule_dim, 256, 28*28], dtype=tf.float32)
+                # mlp = MLP([out_capsule_dim, 256, 28*28], dtype=tf.float32)
+                layer1 = tf.layers.Dense(512, activation=tf.nn.relu, use_bias=True, kernel_initializer=tf.initializers.random_normal)
+                layer2 = tf.layers.Dense(1024, activation=tf.nn.relu, use_bias=True, kernel_initializer=tf.initializers.random_normal)
+                layer3 = tf.layers.Dense(784, activation=tf.nn.sigmoid, use_bias=True, kernel_initializer=tf.initializers.random_normal)
 
             v_masked = tf.multiply(v, tf.reshape(y, shape=(-1,1,n_class)))
             v_masked = tf.reduce_sum(v_masked, axis=2, name='v_mask') # (B x 16)
 
-            v_reco = mlp.make_model(v_masked) # (B x 784)
+            # v_reco = mlp.make_model(v_masked) # (B x 784)
+            v_reco = layer3( layer2( layer1( v_masked ) ) )
 
             reco_loss = tf.reduce_mean(tf.square(v_reco - tf.reshape(x, shape=(-1, 784))), name='reco_loss')
 
