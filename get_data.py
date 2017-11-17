@@ -20,7 +20,7 @@ def get_mini_mnist(file='mnist_mini.data', bsize=None, as_image=False):
     with open(file, 'rb') as f:
         D, L = pickle.load(f)
         if as_image:
-            D = D.reshape((-1, 28, 28))
+            D = D.reshape((-1, 28, 28, 1))
 
     if bsize == None:
         return D, L
