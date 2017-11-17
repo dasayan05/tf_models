@@ -36,6 +36,7 @@ def main( args=None ):
     convcaps_kernel_size, convcaps_stride = 9, 2
     convcaps_capsule_dim, convcaps_fea_maps = 8, 32
     n_class, out_capsule_dim = 10, 16
+    reco_net1, reco_net2, reco_net3 = 512, 1024, image_h*image_w
 
     with tf.name_scope('phs') as phs: # all the placeholders
         x = tf.placeholder(tf.float32, shape=(None,image_w,image_h,image_c), name='x')
@@ -112,16 +113,21 @@ def main( args=None ):
         # reconstruction loss
         with tf.name_scope('recon_loss'):
             with tf.variable_scope(params):
-                layer1 = tf.layers.Dense(512, activation=tf.nn.relu, use_bias=True, kernel_initializer=tf.initializers.random_normal)
-                layer2 = tf.layers.Dense(1024, activation=tf.nn.relu, use_bias=True, kernel_initializer=tf.initializers.random_normal)
-                layer3 = tf.layers.Dense(784, activation=tf.nn.sigmoid, use_bias=True, kernel_initializer=tf.initializers.random_normal)
+                layer1 = tf.layers.Dense(reco_net1, activation=tf.nn.relu, use_bias=True,
+                    kernel_initializer=tf.initializers.random_normal)
+                layer2 = tf.layers.Dense(reco_net2, activation=tf.nn.relu, use_bias=True,
+                    kernel_initializer=tf.initializers.random_normal)
+                layer3 = tf.layers.Dense(reco_net3, activation=tf.nn.sigmoid, use_bias=True,
+                    kernel_initializer=tf.initializers.random_normal)
 
             v_masked = tf.multiply(v, tf.reshape(y, shape=(-1,1,n_class)))
             v_masked = tf.reduce_sum(v_masked, axis=2, name='v_mask') # (B x 16)
 
+            # the entire reconstruction network
             v_reco = layer3( layer2( layer1( v_masked ) ) )
 
-            reco_loss = tf.reduce_mean(tf.square(v_reco - tf.reshape(x, shape=(-1, 784))), name='reco_loss')
+            reco_loss = tf.reduce_mean(tf.square(v_reco - tf.reshape(x, shape=(-1, 784))),
+                name='reco_loss')
 
         # the length of v_j
         v_len = tf.sqrt(tf.reduce_sum(tf.square(v), axis=1) + eps) # (B x 10)
@@ -155,7 +161,6 @@ def main( args=None ):
         gstep = 1
 
         for E in range(epochs):
-
             for I in range(int(55000 / bsize)):
 
                 X, Y = mnist.train.next_batch(bsize, shuffle=True)
